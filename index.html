@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>3D 電荷與電場模擬器</title>
+    <title>3D 電荷與電場模擬器 (修正版)</title>
     <style>
         body { margin: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; background-color: #1a1a1a; color: white; }
         canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
@@ -13,33 +13,35 @@
             position: absolute;
             top: 10px;
             left: 10px;
-            padding: 10px;
-            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.8);
             border-radius: 8px;
             pointer-events: auto;
-            max-width: 300px;
+            max-width: 320px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
         }
 
         #info-panel {
             position: absolute;
-            bottom: 10px;
+            bottom: 20px;
             left: 10px;
-            padding: 10px;
-            background: rgba(0, 0, 0, 0.7);
+            padding: 15px;
+            background: rgba(0, 0, 0, 0.8);
             border-radius: 8px;
-            pointer-events: none; /* 讓點擊穿透 */
+            pointer-events: none;
             font-size: 0.9em;
             max-width: 90vw;
         }
 
-        .control-group { margin-bottom: 10px; }
-        label { display: block; font-size: 0.8em; margin-bottom: 4px; color: #ccc; }
+        .control-group { margin-bottom: 12px; }
+        label { display: block; font-size: 0.85em; margin-bottom: 5px; color: #ccc; }
         input[type="number"], select {
-            width: 100%; padding: 6px; border-radius: 4px; border: none; background: #333; color: white;
+            width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #444; background: #333; color: white;
+            box-sizing: border-box;
         }
         button {
-            width: 100%; padding: 8px; margin-top: 5px; cursor: pointer;
-            background: #4a90e2; border: none; border-radius: 4px; color: white; font-weight: bold;
+            width: 100%; padding: 10px; margin-top: 5px; cursor: pointer;
+            background: #4a90e2; border: none; border-radius: 4px; color: white; font-weight: bold; font-size: 1em;
         }
         button.danger { background: #e24a4a; }
         button:active { transform: scale(0.98); }
@@ -49,13 +51,15 @@
             #ui-container {
                 top: auto; bottom: 0; left: 0; right: 0;
                 width: 100%; max-width: 100%;
-                border-radius: 10px 10px 0 0;
-                display: flex; flex-wrap: wrap; gap: 10px;
-                align-items: center; justify-content: space-between;
-                padding-bottom: 20px;
+                border-radius: 15px 15px 0 0;
+                display: grid; 
+                grid-template-columns: 1fr 1fr; 
+                gap: 10px;
+                padding: 15px;
+                padding-bottom: 30px;
             }
-            .control-group { width: 45%; margin-bottom: 0; }
-            #info-panel { top: 10px; bottom: auto; }
+            .full-width { grid-column: span 2; }
+            #info-panel { top: 10px; bottom: auto; background: rgba(0,0,0,0.6); }
         }
     </style>
     <!-- 引入 Three.js -->
@@ -72,28 +76,31 @@
 <body>
 
     <div id="ui-container">
-        <div class="control-group">
-            <label>模式</label>
+        <div class="control-group full-width">
+            <label>操作模式</label>
             <select id="modeSelect">
                 <option value="charge">放置電荷 (Source)</option>
-                <option value="probe">放置觀測點 (Probe)</option>
+                <option value="probe">放置觀測點 (Probe - 限一個)</option>
             </select>
         </div>
         <div class="control-group">
-            <label>電荷量 (Q) / 單位自訂</label>
-            <input type="number" id="chargeValue" value="1" step="0.1">
-        </div>
-        <div class="control-group" style="flex-grow: 1;">
-            <button id="clearBtn" class="danger">清除所有</button>
+            <label>電荷量 (Q)</label>
+            <input type="number" id="chargeValue" value="1" step="1">
         </div>
         <div class="control-group">
-            <label style="display:inline-block; font-size:10px;">格線吸附: 0.1</label>
+            <label>目前操作</label>
+            <div style="font-size: 0.8em; color:#aaa; line-height:1.4;">
+                點擊網格放置。<br>格線單位: 1
+            </div>
+        </div>
+        <div class="control-group full-width">
+            <button id="clearBtn" class="danger">清除場景</button>
         </div>
     </div>
 
     <div id="info-panel">
-        <div id="statusText">點擊網格以放置電荷。</div>
-        <div id="dataText" style="color: #4a90e2; margin-top:5px;"></div>
+        <div id="statusText" style="font-weight: bold; margin-bottom:5px;">準備就緒</div>
+        <div id="dataText" style="color: #4a90e2;"></div>
     </div>
 
     <script type="module">
@@ -102,13 +109,16 @@
 
         // --- 全域變數 ---
         let scene, camera, renderer, controls;
-        let plane; // 用於射線檢測的基準平面
+        let plane;
         let raycaster = new THREE.Raycaster();
         let mouse = new THREE.Vector2();
         
-        const charges = []; // 存放所有電荷物件 {mesh, value, type: 'source'|'probe', vectorArrow}
-        const gridStep = 0.1; // 格線吸附單位
-        const k = 100; // 模擬用的庫倫常數 (為了視覺效果放大)
+        // 資料儲存
+        const charges = []; // 存放 Source 電荷
+        let probe = null;   // 存放單一 Probe 物件
+        
+        const gridStep = 1; // 格線單位改為 1
+        const k = 50;       // 視覺模擬係數
 
         // UI 元素
         const elMode = document.getElementById('modeSelect');
@@ -120,49 +130,55 @@
         animate();
 
         function init() {
-            // 1. 場景設定
+            // 1. 場景
             scene = new THREE.Scene();
             scene.background = new THREE.Color(0x222222);
 
-            // 2. 相機設定
+            // 2. 相機
             camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(5, 5, 8);
+            camera.position.set(10, 10, 15); // 拉遠一點因為格線變大了
 
-            // 3. 渲染器設定
+            // 3. 渲染
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             document.body.appendChild(renderer.domElement);
 
-            // 4. 控制器 (OrbitControls)
+            // 4. 控制
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
 
-            // 5. 輔助網格與座標軸
-            const gridHelper = new THREE.GridHelper(20, 200, 0x555555, 0x333333); // 20大小, 200格 = 0.1一格
+            // 5. 輔助網格 (大小 40, 分割 40 => 每一格是 1)
+            const gridHelper = new THREE.GridHelper(40, 40, 0x888888, 0x333333);
             scene.add(gridHelper);
 
-            const axesHelper = new THREE.AxesHelper(2);
+            // 座標軸
+            const axesHelper = new THREE.AxesHelper(3);
             scene.add(axesHelper);
 
-            // 隱形平面，用於捕捉滑鼠點擊位置 (XZ平面)
+            // 點擊判定平面
             const planeGeometry = new THREE.PlaneGeometry(100, 100);
             const planeMaterial = new THREE.MeshBasicMaterial({ visible: false });
             plane = new THREE.Mesh(planeGeometry, planeMaterial);
             plane.rotation.x = -Math.PI / 2;
             scene.add(plane);
 
-            // 6. 事件監聽
+            // 光源 (讓球體有立體感)
+            const ambientLight = new THREE.AmbientLight(0x606060);
+            scene.add(ambientLight);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            dirLight.position.set(10, 20, 10);
+            scene.add(dirLight);
+
+            // 6. 事件
             window.addEventListener('resize', onWindowResize);
-            renderer.domElement.addEventListener('pointerdown', onPointerDown); // 使用 pointerdown 支援手機觸控
+            renderer.domElement.addEventListener('pointerdown', onPointerDown);
             document.getElementById('clearBtn').addEventListener('click', clearAll);
         }
 
         function onPointerDown(event) {
-            // 避免點擊 UI 時觸發
             if(event.target !== renderer.domElement) return;
 
-            // 計算滑鼠座標 (-1 到 +1)
             mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
@@ -170,15 +186,12 @@
             const intersects = raycaster.intersectObject(plane);
 
             if (intersects.length > 0) {
-                // 如果正在旋轉視角，不要放置 (簡單判斷: 按下和放開位置不同，這裡簡化為只有點擊瞬間)
-                // 為了更好的體驗，通常區分 Click 和 Drag，但這裡為了簡化程式碼直接放置
-                // 實作吸附邏輯
                 const point = intersects[0].point;
-                const x = Math.round(point.x / gridStep) * gridStep;
-                const z = Math.round(point.z / gridStep) * gridStep;
-                const y = 0; // 預設放在平面上，若要支援 Y 軸需調整 UI
-
-                placeObject(new THREE.Vector3(x, y, z));
+                // 吸附邏輯：四雪五入到最近的整數 (因為 gridStep = 1)
+                const x = Math.round(point.x);
+                const z = Math.round(point.z);
+                
+                placeObject(new THREE.Vector3(x, 0, z));
             }
         }
 
@@ -186,143 +199,162 @@
             const mode = elMode.value;
             const value = parseFloat(elCharge.value);
 
-            // 檢查是否重疊
+            // 檢查位置是否已有電荷 (避免重疊)
             for(let c of charges) {
-                if(c.mesh.position.distanceTo(position) < 0.05) return; // 太近不放
+                if(c.mesh.position.distanceTo(position) < 0.1) return;
             }
+            if(probe && probe.mesh.position.distanceTo(position) < 0.1) return;
 
-            const geometry = new THREE.SphereGeometry(mode === 'charge' ? 0.2 : 0.1, 32, 32);
-            let color = 0xffff00; // Probe default
+            // 幾何設定：球體小於格線 1 (設為 0.25)
+            const geometry = new THREE.SphereGeometry(0.25, 32, 32);
             
-            if (mode === 'charge') {
-                color = value > 0 ? 0xff3333 : 0x3388ff;
-            }
+            if (mode === 'probe') {
+                // 如果已有 probe，先移除舊的
+                if (probe) {
+                    scene.remove(probe.mesh);
+                    probe = null;
+                }
 
-            const material = new THREE.MeshPhongMaterial({ color: color, shininess: 100 });
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.position.copy(position);
-            scene.add(mesh);
+                const material = new THREE.MeshPhongMaterial({ color: 0xffff00, emissive: 0x333300 });
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.position.copy(position);
+                scene.add(mesh);
 
-            // 建立光暈效果 (簡單模擬)
-            if(mode === 'charge') {
-                const light = new THREE.PointLight(color, 1, 3);
-                light.position.set(0,0,0); 
+                // 建立箭頭 (初始長度 0)
+                const arrowHelper = new THREE.ArrowHelper(new THREE.Vector3(0,1,0), new THREE.Vector3(0,0,0), 0, 0xffff00);
+                mesh.add(arrowHelper);
+
+                probe = {
+                    mesh: mesh,
+                    type: 'probe',
+                    arrow: arrowHelper,
+                    force: new THREE.Vector3(), // 這裡代表電場 E
+                    potential: 0
+                };
+                elStatus.textContent = `放置觀測點於 (${position.x}, 0, ${position.z})`;
+
+            } else {
+                // 放置電荷
+                const color = value > 0 ? 0xff3333 : 0x3388ff;
+                const material = new THREE.MeshPhongMaterial({ color: color });
+                const mesh = new THREE.Mesh(geometry, material);
+                mesh.position.copy(position);
+                scene.add(mesh);
+
+                // 電荷光暈
+                const light = new THREE.PointLight(color, 1, 4);
                 mesh.add(light);
+
+                // 電荷受力箭頭
+                const arrowHelper = new THREE.ArrowHelper(new THREE.Vector3(0,1,0), new THREE.Vector3(0,0,0), 0, 0xffffff);
+                mesh.add(arrowHelper);
+
+                charges.push({
+                    mesh: mesh,
+                    value: value,
+                    type: 'charge',
+                    arrow: arrowHelper,
+                    force: new THREE.Vector3(),
+                    potential: 0
+                });
+                elStatus.textContent = `放置電荷 Q=${value} 於 (${position.x}, 0, ${position.z})`;
             }
-
-            // 建立向量箭頭容器
-            const arrowDir = new THREE.Vector3(0, 1, 0);
-            const arrowHelper = new THREE.ArrowHelper(arrowDir, new THREE.Vector3(0,0,0), 0, color);
-            mesh.add(arrowHelper); // 箭頭跟隨電荷移動
-
-            charges.push({
-                mesh: mesh,
-                value: value,
-                type: mode,
-                arrow: arrowHelper,
-                force: new THREE.Vector3(),
-                potential: 0
-            });
-
-            // 增加一點環境光讓球體可見
-            const ambientLight = new THREE.AmbientLight(0x404040);
-            scene.add(ambientLight);
 
             updatePhysics();
-            elStatus.textContent = `已放置 ${mode === 'charge' ? '電荷 Q=' + value : '觀測點'} 於 (${position.x.toFixed(1)}, ${position.y.toFixed(1)}, ${position.z.toFixed(1)})`;
         }
 
         function clearAll() {
             charges.forEach(c => scene.remove(c.mesh));
             charges.length = 0;
+            if (probe) {
+                scene.remove(probe.mesh);
+                probe = null;
+            }
             elStatus.textContent = "場景已清除";
             elData.textContent = "";
         }
 
-        // --- 物理核心 ---
         function updatePhysics() {
-            // 1. 重置所有受力與電位
-            charges.forEach(c => {
-                c.force.set(0, 0, 0);
-                c.potential = 0;
-            });
+            // 1. 重置數據
+            charges.forEach(c => { c.force.set(0,0,0); c.potential = 0; });
+            if(probe) { probe.force.set(0,0,0); probe.potential = 0; }
 
-            let maxMagnitude = 0;
+            let maxForceMag = 0;
 
-            // 2. 計算力 (F) 與 電場 (E)
-            // 對於 Source 電荷：計算受到的電力 (F = k * q1 * q2 / r^2)
-            // 對於 Probe 觀測點：計算該點的電場 (E = k * Q / r^2) * 測試電荷假設為+1
-            
+            // 2. 計算電荷間的受力 (Source <-> Source)
             for (let i = 0; i < charges.length; i++) {
                 const c1 = charges[i];
-                
                 for (let j = 0; j < charges.length; j++) {
                     if (i === j) continue;
                     const c2 = charges[j];
-
-                    // 只有 Source 會對別人產生影響
-                    if (c2.type !== 'charge') continue;
-
+                    
                     const rVec = new THREE.Vector3().subVectors(c1.mesh.position, c2.mesh.position);
                     const dist = rVec.length();
-                    if (dist < 0.001) continue; // 避免除以零
+                    if (dist < 0.1) continue;
 
+                    // 庫倫力 F = k * q1 * q2 / r^2
+                    const forceMag = (k * c1.value * c2.value) / (dist * dist);
                     const dir = rVec.normalize();
-
-                    // 計算電位 V = kQ/r (純量)
-                    c1.potential += k * c2.value / dist;
-
-                    // 計算向量
-                    // 如果 c1 是電荷，算庫倫力： F = k * q1 * q2 / r^2
-                    // 如果 c1 是觀測點，算電場： E = k * Q / r^2 (相當於 q1=+1)
+                    c1.force.add(dir.multiplyScalar(forceMag));
                     
-                    let magnitude = 0;
-                    if (c1.type === 'charge') {
-                        magnitude = (k * c1.value * c2.value) / (dist * dist);
-                    } else {
-                        // 觀測點假設帶 +1 測試電荷來顯示電場方向
-                        magnitude = (k * 1 * c2.value) / (dist * dist);
-                    }
-
-                    // 向量疊加
-                    c1.force.add(dir.multiplyScalar(magnitude));
+                    // 電位疊加 (只計算別人對自己的)
+                    c1.potential += (k * c2.value) / dist;
                 }
-
-                // 紀錄最大量值以便稍後縮放
-                const currentMag = c1.force.length();
-                if (currentMag > maxMagnitude) maxMagnitude = currentMag;
+                maxForceMag = Math.max(maxForceMag, c1.force.length());
             }
 
-            // 3. 更新視覺化 (向量自動適配)
-            const MAX_ARROW_LENGTH = 3.0; // 畫面上箭頭最長 3 單位
-            
-            charges.forEach(c => {
-                const mag = c.force.length();
-                if (mag > 0.0001) {
-                    c.arrow.visible = true;
-                    // 設定方向
-                    c.arrow.setDirection(c.force.clone().normalize());
-                    
-                    // 設定長度 (智慧縮放：以最大值為基準，但也保有一定的對數平滑，避免差異過大)
-                    // 這裡使用線性比例： (mag / maxMagnitude) * MAX_ARROW_LENGTH
-                    // 若數值差異太大，可以改用 Math.log(mag + 1)
-                    let visualLength = (mag / maxMagnitude) * MAX_ARROW_LENGTH;
-                    
-                    // 為了讓微小的力也能稍微被看見，設定一個最小值 (除非真的很小)
-                    if (visualLength < 0.2 && visualLength > 0.01) visualLength = 0.2;
-                    
-                    c.arrow.setLength(visualLength, visualLength * 0.2, visualLength * 0.1);
-                    c.arrow.setColor(c.type === 'charge' ? 0xffffff : 0xffff00); // 電荷受力白色，電場黃色
-                } else {
-                    c.arrow.visible = false;
-                }
-            });
+            // 3. 計算觀測點的電場 (Probe <-> Source)
+            // 電場 E = k * Q / r^2 (相當於放置一個 +1 的測試電荷)
+            if (probe) {
+                for (let c of charges) {
+                    const rVec = new THREE.Vector3().subVectors(probe.mesh.position, c.mesh.position);
+                    const dist = rVec.length();
+                    if (dist < 0.1) continue;
 
-            // 更新 UI 數據顯示 (顯示最後一個放置的物體資訊)
-            if (charges.length > 0) {
-                const last = charges[charges.length - 1];
-                const typeStr = last.type === 'charge' ? "受力 F" : "電場 E";
-                elData.innerText = `最後選點: 電位 V ≈ ${last.potential.toFixed(2)} | 合向量 |${typeStr}| ≈ ${last.force.length().toFixed(2)}`;
+                    // 電場方向由 Source 指向 Probe (若 Source 為正)
+                    const dir = rVec.normalize();
+                    const eFieldMag = (k * 1 * c.value) / (dist * dist);
+                    
+                    probe.force.add(dir.multiplyScalar(eFieldMag));
+                    probe.potential += (k * c.value) / dist;
+                }
+                // 將 Probe 的電場大小也納入縮放考量
+                maxForceMag = Math.max(maxForceMag, probe.force.length());
+            }
+
+            // 4. 視覺化更新 (箭頭縮放)
+            // 設定螢幕上箭頭的最大長度 (例如 2 格長)
+            const MAX_VISUAL_LENGTH = 2.5; 
+            
+            // 輔助函式：更新單一物件的箭頭
+            const updateArrow = (obj) => {
+                const vec = obj.force;
+                const mag = vec.length();
+                if (mag > 0.01) {
+                    obj.arrow.visible = true;
+                    obj.arrow.setDirection(vec.clone().normalize());
+                    
+                    // 線性縮放： (目前值 / 最大值) * 最大顯示長度
+                    let visualLen = (mag / maxForceMag) * MAX_VISUAL_LENGTH;
+                    
+                    // 避免太短看不到
+                    if(visualLen < 0.3) visualLen = 0.3;
+                    
+                    // 箭頭參數: length, headLength, headWidth
+                    obj.arrow.setLength(visualLen, visualLen * 0.25, visualLen * 0.15);
+                } else {
+                    obj.arrow.visible = false;
+                }
+            };
+
+            charges.forEach(updateArrow);
+            if (probe) updateArrow(probe);
+
+            // 更新文字資訊
+            if (probe) {
+                elData.innerHTML = `觀測點數據:<br>電位 V ≈ ${probe.potential.toFixed(2)}<br>電場強度 |E| ≈ ${probe.force.length().toFixed(2)}`;
+            } else if (charges.length > 0) {
+                elData.textContent = `場景中有 ${charges.length} 個電荷`;
             }
         }
 
