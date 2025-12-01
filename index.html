@@ -3,22 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>3D 電荷與電場模擬器 (修正版)</title>
+    <title>3D 電場實驗室 (Pro)</title>
     <style>
-        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; background-color: #1a1a1a; color: white; }
+        body { margin: 0; overflow: hidden; font-family: 'Segoe UI', sans-serif; background-color: #121212; color: white; }
         canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
         
-        /* UI 介面層 */
+        /* UI 容器 */
         #ui-container {
             position: absolute;
             top: 10px;
             left: 10px;
             padding: 15px;
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(30, 30, 30, 0.9);
+            border: 1px solid #444;
             border-radius: 8px;
             pointer-events: auto;
             max-width: 320px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            display: flex; flex-direction: column; gap: 10px;
         }
 
         #info-panel {
@@ -26,40 +28,50 @@
             bottom: 20px;
             left: 10px;
             padding: 15px;
-            background: rgba(0, 0, 0, 0.8);
+            background: rgba(30, 30, 30, 0.9);
+            border: 1px solid #444;
             border-radius: 8px;
             pointer-events: none;
-            font-size: 0.9em;
+            font-size: 0.95em;
             max-width: 90vw;
         }
 
-        .control-group { margin-bottom: 12px; }
+        /* 視角切換按鈕群 */
+        .view-controls {
+            display: flex; gap: 5px;
+        }
+        .view-btn {
+            flex: 1; padding: 6px; font-size: 12px;
+            background: #333; border: 1px solid #555; color: #ddd;
+            cursor: pointer; border-radius: 4px;
+        }
+        .view-btn.active { background: #4a90e2; color: white; border-color: #4a90e2; }
+
         label { display: block; font-size: 0.85em; margin-bottom: 5px; color: #ccc; }
         input[type="number"], select {
-            width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #444; background: #333; color: white;
+            width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #555; background: #222; color: white;
             box-sizing: border-box;
         }
-        button {
-            width: 100%; padding: 10px; margin-top: 5px; cursor: pointer;
-            background: #4a90e2; border: none; border-radius: 4px; color: white; font-weight: bold; font-size: 1em;
+        
+        /* 主要按鈕 */
+        .action-btn {
+            width: 100%; padding: 10px; cursor: pointer;
+            border: none; border-radius: 4px; font-weight: bold; font-size: 1em;
+            color: white; transition: background 0.2s;
         }
-        button.danger { background: #e24a4a; }
-        button:active { transform: scale(0.98); }
+        .btn-primary { background: #4a90e2; }
+        .btn-danger { background: #e24a4a; }
+        .btn-primary:active, .btn-danger:active { transform: scale(0.98); }
 
-        /* 手機版優化 */
+        /* 手機版排版 */
         @media (max-width: 600px) {
             #ui-container {
                 top: auto; bottom: 0; left: 0; right: 0;
                 width: 100%; max-width: 100%;
                 border-radius: 15px 15px 0 0;
-                display: grid; 
-                grid-template-columns: 1fr 1fr; 
-                gap: 10px;
-                padding: 15px;
                 padding-bottom: 30px;
             }
-            .full-width { grid-column: span 2; }
-            #info-panel { top: 10px; bottom: auto; background: rgba(0,0,0,0.6); }
+            #info-panel { top: 10px; bottom: auto; background: rgba(0,0,0,0.7); }
         }
     </style>
     <!-- 引入 Three.js -->
@@ -76,31 +88,37 @@
 <body>
 
     <div id="ui-container">
-        <div class="control-group full-width">
+        <!-- 視角切換 -->
+        <div>
+            <label>工作平面 (點擊切換視角)</label>
+            <div class="view-controls">
+                <button class="view-btn" onclick="setPlane('XY')">XY (前視)</button>
+                <button class="view-btn active" onclick="setPlane('XZ')">XZ (俯視)</button>
+                <button class="view-btn" onclick="setPlane('YZ')">YZ (側視)</button>
+            </div>
+        </div>
+
+        <hr style="border: 0; border-top: 1px solid #444; width: 100%;">
+
+        <div>
             <label>操作模式</label>
             <select id="modeSelect">
                 <option value="charge">放置電荷 (Source)</option>
-                <option value="probe">放置觀測點 (Probe - 限一個)</option>
+                <option value="probe">放置觀測點 (Probe)</option>
             </select>
         </div>
-        <div class="control-group">
+
+        <div id="chargeInputGroup">
             <label>電荷量 (Q)</label>
             <input type="number" id="chargeValue" value="1" step="1">
         </div>
-        <div class="control-group">
-            <label>目前操作</label>
-            <div style="font-size: 0.8em; color:#aaa; line-height:1.4;">
-                點擊網格放置。<br>格線單位: 1
-            </div>
-        </div>
-        <div class="control-group full-width">
-            <button id="clearBtn" class="danger">清除場景</button>
-        </div>
+
+        <button id="clearBtn" class="action-btn btn-danger">清除場景</button>
     </div>
 
     <div id="info-panel">
-        <div id="statusText" style="font-weight: bold; margin-bottom:5px;">準備就緒</div>
-        <div id="dataText" style="color: #4a90e2;"></div>
+        <div id="statusText" style="font-weight: bold; margin-bottom:5px; color:#fff;">請選擇視角並放置電荷</div>
+        <div id="dataText" style="color: #4a90e2; font-family: monospace;"></div>
     </div>
 
     <script type="module">
@@ -109,22 +127,27 @@
 
         // --- 全域變數 ---
         let scene, camera, renderer, controls;
-        let plane;
+        let gridHelper, planeMesh;
         let raycaster = new THREE.Raycaster();
         let mouse = new THREE.Vector2();
         
-        // 資料儲存
-        const charges = []; // 存放 Source 電荷
-        let probe = null;   // 存放單一 Probe 物件
+        // 狀態管理
+        let currentPlane = 'XZ'; // 'XY', 'XZ', 'YZ'
+        const charges = []; 
+        let probe = null; 
         
-        const gridStep = 1; // 格線單位改為 1
-        const k = 50;       // 視覺模擬係數
-
-        // UI 元素
-        const elMode = document.getElementById('modeSelect');
-        const elCharge = document.getElementById('chargeValue');
+        // 物理常數
+        const k = 100; // 模擬常數
+        
+        // UI 參考
         const elStatus = document.getElementById('statusText');
         const elData = document.getElementById('dataText');
+        const elMode = document.getElementById('modeSelect');
+        const elChargeVal = document.getElementById('chargeValue');
+        const elChargeGroup = document.getElementById('chargeInputGroup');
+
+        // 暴露函數給 HTML 按鈕用
+        window.setPlane = changePlaneView;
 
         init();
         animate();
@@ -132,50 +155,113 @@
         function init() {
             // 1. 場景
             scene = new THREE.Scene();
-            scene.background = new THREE.Color(0x222222);
+            scene.background = new THREE.Color(0x121212);
 
             // 2. 相機
             camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(10, 10, 15); // 拉遠一點因為格線變大了
-
-            // 3. 渲染
+            
+            // 3. 渲染器
             renderer = new THREE.WebGLRenderer({ antialias: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(window.devicePixelRatio);
             document.body.appendChild(renderer.domElement);
 
-            // 4. 控制
+            // 4. 控制器
             controls = new OrbitControls(camera, renderer.domElement);
             controls.enableDamping = true;
 
-            // 5. 輔助網格 (大小 40, 分割 40 => 每一格是 1)
-            const gridHelper = new THREE.GridHelper(40, 40, 0x888888, 0x333333);
-            scene.add(gridHelper);
+            // 5. 燈光
+            scene.add(new THREE.AmbientLight(0x888888));
+            const light = new THREE.DirectionalLight(0xffffff, 1);
+            light.position.set(10, 20, 10);
+            scene.add(light);
+            const light2 = new THREE.DirectionalLight(0xffffff, 0.5);
+            light2.position.set(-10, -10, -5);
+            scene.add(light2);
 
-            // 座標軸
-            const axesHelper = new THREE.AxesHelper(3);
-            scene.add(axesHelper);
+            // 6. 格線與平面 (初始為 XZ)
+            createGridAndPlane();
+            changePlaneView('XZ'); // 預設視角
 
-            // 點擊判定平面
-            const planeGeometry = new THREE.PlaneGeometry(100, 100);
-            const planeMaterial = new THREE.MeshBasicMaterial({ visible: false });
-            plane = new THREE.Mesh(planeGeometry, planeMaterial);
-            plane.rotation.x = -Math.PI / 2;
-            scene.add(plane);
-
-            // 光源 (讓球體有立體感)
-            const ambientLight = new THREE.AmbientLight(0x606060);
-            scene.add(ambientLight);
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-            dirLight.position.set(10, 20, 10);
-            scene.add(dirLight);
-
-            // 6. 事件
+            // 7. 監聽器
             window.addEventListener('resize', onWindowResize);
             renderer.domElement.addEventListener('pointerdown', onPointerDown);
             document.getElementById('clearBtn').addEventListener('click', clearAll);
+            
+            // 模式切換時隱藏電荷輸入框 (觀測點不需要設定 Q)
+            elMode.addEventListener('change', (e) => {
+                if(e.target.value === 'probe') {
+                    elChargeGroup.style.opacity = '0.3';
+                    elChargeGroup.style.pointerEvents = 'none';
+                } else {
+                    elChargeGroup.style.opacity = '1';
+                    elChargeGroup.style.pointerEvents = 'auto';
+                }
+            });
         }
 
+        // --- 格線與平面管理 ---
+        function createGridAndPlane() {
+            // 強化的格線：顏色更亮 (0xaaaaaa, 0x444444)
+            gridHelper = new THREE.GridHelper(40, 40, 0xaaaaaa, 0x444444);
+            scene.add(gridHelper);
+
+            // 隱形平面，用於 Raycaster 點擊偵測
+            const planeGeo = new THREE.PlaneGeometry(100, 100);
+            const planeMat = new THREE.MeshBasicMaterial({ visible: false, side: THREE.DoubleSide });
+            planeMesh = new THREE.Mesh(planeGeo, planeMat);
+            scene.add(planeMesh);
+            
+            // 座標軸輔助 (R=X, G=Y, B=Z)
+            const axes = new THREE.AxesHelper(3);
+            scene.add(axes);
+        }
+
+        function changePlaneView(planeType) {
+            currentPlane = planeType;
+            
+            // 更新按鈕樣式
+            document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+            const btnIndex = planeType === 'XY' ? 0 : planeType === 'XZ' ? 1 : 2;
+            document.querySelectorAll('.view-btn')[btnIndex].classList.add('active');
+
+            // 重置位置與旋轉
+            gridHelper.rotation.set(0,0,0);
+            planeMesh.rotation.set(0,0,0);
+            controls.reset();
+
+            const dist = 30;
+
+            if (planeType === 'XZ') {
+                // 俯視 (標準)
+                // Grid 平躺 (XZ平面)，Normal 是 Y
+                planeMesh.rotation.x = -Math.PI / 2; 
+                // GridHelper 預設就是 XZ 平面，不用轉
+                camera.position.set(0, dist, 0);
+                camera.up.set(0, 0, -1); // 讓視角轉正，上方為 -Z
+            } 
+            else if (planeType === 'XY') {
+                // 前視
+                // Grid 立起來 (XY平面)，Normal 是 Z
+                gridHelper.rotation.x = Math.PI / 2;
+                planeMesh.rotation.set(0,0,0); // PlaneGeometry 預設在 XY 平面
+                camera.position.set(0, 0, dist);
+                camera.up.set(0, 1, 0);
+            } 
+            else if (planeType === 'YZ') {
+                // 側視
+                // Grid 轉向 (YZ平面)，Normal 是 X
+                gridHelper.rotation.z = Math.PI / 2;
+                planeMesh.rotation.y = Math.PI / 2;
+                camera.position.set(dist, 0, 0);
+                camera.up.set(0, 1, 0);
+            }
+
+            controls.target.set(0,0,0);
+            elStatus.textContent = `視角切換至 ${planeType} 平面`;
+        }
+
+        // --- 點擊與放置 ---
         function onPointerDown(event) {
             if(event.target !== renderer.domElement) return;
 
@@ -183,84 +269,134 @@
             mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
 
             raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObject(plane);
+            const intersects = raycaster.intersectObject(planeMesh);
 
             if (intersects.length > 0) {
                 const point = intersects[0].point;
-                // 吸附邏輯：四雪五入到最近的整數 (因為 gridStep = 1)
-                const x = Math.round(point.x);
-                const z = Math.round(point.z);
-                
-                placeObject(new THREE.Vector3(x, 0, z));
+                // 吸附邏輯 (整數格點)
+                let x = Math.round(point.x);
+                let y = Math.round(point.y);
+                let z = Math.round(point.z);
+
+                // 強制鎖定平面 (避免浮點數誤差)
+                if (currentPlane === 'XZ') y = 0;
+                if (currentPlane === 'XY') z = 0;
+                if (currentPlane === 'YZ') x = 0;
+
+                placeObject(new THREE.Vector3(x, y, z));
             }
         }
 
-        function placeObject(position) {
+        function placeObject(pos) {
             const mode = elMode.value;
-            const value = parseFloat(elCharge.value);
 
-            // 檢查位置是否已有電荷 (避免重疊)
-            for(let c of charges) {
-                if(c.mesh.position.distanceTo(position) < 0.1) return;
-            }
-            if(probe && probe.mesh.position.distanceTo(position) < 0.1) return;
+            // 檢查重疊
+            for(let c of charges) if(c.mesh.position.distanceTo(pos) < 0.1) return;
+            if(probe && probe.mesh.position.distanceTo(pos) < 0.1) return;
 
-            // 幾何設定：球體小於格線 1 (設為 0.25)
-            const geometry = new THREE.SphereGeometry(0.25, 32, 32);
-            
+            // 幾何設定
+            const geometry = new THREE.SphereGeometry(0.3, 32, 32);
+
             if (mode === 'probe') {
-                // 如果已有 probe，先移除舊的
                 if (probe) {
                     scene.remove(probe.mesh);
-                    probe = null;
+                    if(probe.arrowMesh) scene.remove(probe.arrowMesh); // 移除舊箭頭
                 }
 
-                const material = new THREE.MeshPhongMaterial({ color: 0xffff00, emissive: 0x333300 });
+                const material = new THREE.MeshPhongMaterial({ color: 0xffff00, emissive: 0x444400 });
                 const mesh = new THREE.Mesh(geometry, material);
-                mesh.position.copy(position);
+                mesh.position.copy(pos);
                 scene.add(mesh);
 
-                // 建立箭頭 (初始長度 0)
-                const arrowHelper = new THREE.ArrowHelper(new THREE.Vector3(0,1,0), new THREE.Vector3(0,0,0), 0, 0xffff00);
-                mesh.add(arrowHelper);
+                // 建立"粗"箭頭 (Fat Arrow)
+                const arrowMesh = createFatArrow(0xffff00);
+                arrowMesh.position.copy(pos); // 箭頭起點在觀測點
+                scene.add(arrowMesh);
 
-                probe = {
-                    mesh: mesh,
-                    type: 'probe',
-                    arrow: arrowHelper,
-                    force: new THREE.Vector3(), // 這裡代表電場 E
-                    potential: 0
-                };
-                elStatus.textContent = `放置觀測點於 (${position.x}, 0, ${position.z})`;
+                probe = { mesh, arrowMesh, force: new THREE.Vector3(), potential: 0 };
+                elStatus.textContent = `觀測點已放置`;
 
             } else {
                 // 放置電荷
-                const color = value > 0 ? 0xff3333 : 0x3388ff;
+                const val = parseFloat(elChargeVal.value);
+                const color = val > 0 ? 0xff3333 : 0x3388ff;
                 const material = new THREE.MeshPhongMaterial({ color: color });
                 const mesh = new THREE.Mesh(geometry, material);
-                mesh.position.copy(position);
+                mesh.position.copy(pos);
                 scene.add(mesh);
 
-                // 電荷光暈
-                const light = new THREE.PointLight(color, 1, 4);
+                // 電荷發光
+                const light = new THREE.PointLight(color, 1, 3);
                 mesh.add(light);
 
-                // 電荷受力箭頭
-                const arrowHelper = new THREE.ArrowHelper(new THREE.Vector3(0,1,0), new THREE.Vector3(0,0,0), 0, 0xffffff);
-                mesh.add(arrowHelper);
-
-                charges.push({
-                    mesh: mesh,
-                    value: value,
-                    type: 'charge',
-                    arrow: arrowHelper,
-                    force: new THREE.Vector3(),
-                    potential: 0
-                });
-                elStatus.textContent = `放置電荷 Q=${value} 於 (${position.x}, 0, ${position.z})`;
+                charges.push({ mesh, value: val, type: 'charge' });
+                elStatus.textContent = `電荷 Q=${val} 已放置`;
             }
-
             updatePhysics();
+        }
+
+        // --- 自訂粗箭頭函式 ---
+        function createFatArrow(colorHex) {
+            const arrowGroup = new THREE.Group();
+
+            // 箭身 (圓柱)
+            const shaftGeo = new THREE.CylinderGeometry(0.1, 0.1, 1, 12); // 半徑 0.1
+            shaftGeo.translate(0, 0.5, 0); // 將原點移到底部
+            const shaftMat = new THREE.MeshPhongMaterial({ color: colorHex });
+            const shaft = new THREE.Mesh(shaftGeo, shaftMat);
+            shaft.rotation.x = -Math.PI / 2; // 轉向讓它沿著 Z 軸長
+            
+            // 箭頭 (圓錐)
+            const headGeo = new THREE.CylinderGeometry(0, 0.25, 0.5, 12); // 上半徑0, 下半徑0.25
+            headGeo.translate(0, 0.25, 0);
+            const headMat = new THREE.MeshPhongMaterial({ color: colorHex });
+            const head = new THREE.Mesh(headGeo, headMat);
+            head.rotation.x = -Math.PI / 2;
+            head.position.z = 1; // 接在箭身後面
+
+            // 為了方便控制長度，我們把這兩部分包起來
+            // 這裡我們需要動態改變 shaft 的 scale.z 和 head 的 position.z
+            shaft.name = "shaft";
+            head.name = "head";
+
+            arrowGroup.add(shaft);
+            arrowGroup.add(head);
+            arrowGroup.visible = false; // 初始隱藏
+            return arrowGroup;
+        }
+
+        function updateFatArrow(arrowGroup, vector, maxLen) {
+            const mag = vector.length();
+            if(mag < 0.01) {
+                arrowGroup.visible = false;
+                return;
+            }
+            arrowGroup.visible = true;
+
+            // 1. 方向旋轉
+            // lookAt 會將 +Z 軸指向目標，我們的箭頭設計初始也是沿 +Z
+            // 建立一個目標點：目前位置 + 向量方向
+            const target = new THREE.Vector3().copy(arrowGroup.position).add(vector);
+            arrowGroup.lookAt(target);
+
+            // 2. 長度調整
+            // 計算視覺長度
+            const visualLen = Math.min(mag * 0.5, 5); // 簡單縮放，最大長度 5
+            
+            const shaft = arrowGroup.getObjectByName("shaft");
+            const head = arrowGroup.getObjectByName("head");
+
+            const headLen = 0.6; // 箭頭頭部長度固定
+            let shaftLen = visualLen - headLen;
+            if(shaftLen < 0.1) shaftLen = 0.1; // 最小長度保護
+
+            // Cylinder原本長度是 1 (Y軸)，我們轉到 Z 軸了，所以用 scale.y (相對於 geometry) 或 scale.z (相對於 group)
+            // 這裡 shaft 是沿著 Local Z 放置的 (透過 rotation.x = -90deg)，
+            // Geometry 原本沿 Y，所以 scale.y 控制長度
+            shaft.scale.y = shaftLen; 
+            
+            // 箭頭頭部位置
+            head.position.z = shaftLen;
         }
 
         function clearAll() {
@@ -268,94 +404,55 @@
             charges.length = 0;
             if (probe) {
                 scene.remove(probe.mesh);
+                scene.remove(probe.arrowMesh);
                 probe = null;
             }
-            elStatus.textContent = "場景已清除";
             elData.textContent = "";
+            elStatus.textContent = "場景已清除";
         }
 
+        // --- 物理運算 ---
         function updatePhysics() {
-            // 1. 重置數據
-            charges.forEach(c => { c.force.set(0,0,0); c.potential = 0; });
-            if(probe) { probe.force.set(0,0,0); probe.potential = 0; }
-
-            let maxForceMag = 0;
-
-            // 2. 計算電荷間的受力 (Source <-> Source)
-            for (let i = 0; i < charges.length; i++) {
-                const c1 = charges[i];
-                for (let j = 0; j < charges.length; j++) {
-                    if (i === j) continue;
-                    const c2 = charges[j];
-                    
-                    const rVec = new THREE.Vector3().subVectors(c1.mesh.position, c2.mesh.position);
-                    const dist = rVec.length();
-                    if (dist < 0.1) continue;
-
-                    // 庫倫力 F = k * q1 * q2 / r^2
-                    const forceMag = (k * c1.value * c2.value) / (dist * dist);
-                    const dir = rVec.normalize();
-                    c1.force.add(dir.multiplyScalar(forceMag));
-                    
-                    // 電位疊加 (只計算別人對自己的)
-                    c1.potential += (k * c2.value) / dist;
-                }
-                maxForceMag = Math.max(maxForceMag, c1.force.length());
+            if (!probe) {
+                elData.textContent = `場景中有 ${charges.length} 個電荷 (請放置觀測點以檢視場)`;
+                return;
             }
 
-            // 3. 計算觀測點的電場 (Probe <-> Source)
-            // 電場 E = k * Q / r^2 (相當於放置一個 +1 的測試電荷)
-            if (probe) {
-                for (let c of charges) {
-                    const rVec = new THREE.Vector3().subVectors(probe.mesh.position, c.mesh.position);
-                    const dist = rVec.length();
-                    if (dist < 0.1) continue;
+            // 重置
+            probe.force.set(0, 0, 0); // 這裡是電場向量 E
+            probe.potential = 0;
 
-                    // 電場方向由 Source 指向 Probe (若 Source 為正)
-                    const dir = rVec.normalize();
-                    const eFieldMag = (k * 1 * c.value) / (dist * dist);
-                    
-                    probe.force.add(dir.multiplyScalar(eFieldMag));
-                    probe.potential += (k * c.value) / dist;
-                }
-                // 將 Probe 的電場大小也納入縮放考量
-                maxForceMag = Math.max(maxForceMag, probe.force.length());
+            // 計算 E = Σ (k * Q / r^2) * r_hat
+            for (let c of charges) {
+                const rVec = new THREE.Vector3().subVectors(probe.mesh.position, c.mesh.position);
+                const dist = rVec.length();
+                if (dist < 0.1) continue;
+
+                // 電場方向：正電荷推出去，負電荷吸進來
+                // rVec 是 Probe - Source，所以指向 Probe (遠離 Source)
+                // 若 Q > 0，方向同 rVec；若 Q < 0，方向反向
+                const dir = rVec.normalize();
+                
+                // E = kQ / r^2
+                const E_mag = (k * c.value) / (dist * dist);
+                probe.force.add(dir.multiplyScalar(E_mag));
+
+                // V = kQ / r
+                probe.potential += (k * c.value) / dist;
             }
 
-            // 4. 視覺化更新 (箭頭縮放)
-            // 設定螢幕上箭頭的最大長度 (例如 2 格長)
-            const MAX_VISUAL_LENGTH = 2.5; 
-            
-            // 輔助函式：更新單一物件的箭頭
-            const updateArrow = (obj) => {
-                const vec = obj.force;
-                const mag = vec.length();
-                if (mag > 0.01) {
-                    obj.arrow.visible = true;
-                    obj.arrow.setDirection(vec.clone().normalize());
-                    
-                    // 線性縮放： (目前值 / 最大值) * 最大顯示長度
-                    let visualLen = (mag / maxForceMag) * MAX_VISUAL_LENGTH;
-                    
-                    // 避免太短看不到
-                    if(visualLen < 0.3) visualLen = 0.3;
-                    
-                    // 箭頭參數: length, headLength, headWidth
-                    obj.arrow.setLength(visualLen, visualLen * 0.25, visualLen * 0.15);
-                } else {
-                    obj.arrow.visible = false;
-                }
-            };
+            // 更新箭頭
+            updateFatArrow(probe.arrowMesh, probe.force);
 
-            charges.forEach(updateArrow);
-            if (probe) updateArrow(probe);
-
-            // 更新文字資訊
-            if (probe) {
-                elData.innerHTML = `觀測點數據:<br>電位 V ≈ ${probe.potential.toFixed(2)}<br>電場強度 |E| ≈ ${probe.force.length().toFixed(2)}`;
-            } else if (charges.length > 0) {
-                elData.textContent = `場景中有 ${charges.length} 個電荷`;
-            }
+            // 顯示數據
+            const E = probe.force.length();
+            const V = probe.potential;
+            elData.innerHTML = `
+                <span style="color:#ffff00">觀測點</span><br>
+                位置: (${probe.mesh.position.x}, ${probe.mesh.position.y}, ${probe.mesh.position.z})<br>
+                電位 V: ${V.toFixed(2)}<br>
+                電場 E: ${E.toFixed(2)} (向量長度示意)
+            `;
         }
 
         function onWindowResize() {
